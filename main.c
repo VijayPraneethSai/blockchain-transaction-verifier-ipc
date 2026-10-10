@@ -346,6 +346,15 @@ int main(int argc, char *argv[]) {
  int dec_key = rcv_buf.decryption_key;
  int wallet_count = shmemPtr[i].wallet_count;
 
+ // shared memory is written by another process, so do not trust the count
+ if (wallet_count < 0 || wallet_count > MAX_WALLETS_PER_BLOCK) {
+ fprintf(stderr, "block %d has an invalid wallet count: %d\n", i, wallet_count);
+ return 1;
+ }
+
+ // every hash has at least a negative number of leading zeros, so a negative value behaves like 0
+ if (sec_val < 0) sec_val = 0;
+
  // Decrypting the wallets
  char decrypted_wallets[MAX_WALLETS_PER_BLOCK][WALLET_HASH_SIZE + 1];
  int shift = dec_key % WALLET_HASH_SIZE;

@@ -10,6 +10,11 @@ done
 for s in $(seq 100 110); do
     n=$((n + 1)); $d "$v" "$s" 20000 60 500 >/dev/null || { echo "FAIL medium seed $s"; fail=$((fail + 1)); }
 done
+# negative security values behave like 0; a corrupt wallet count is refused
+for s in 200 201 202; do
+    n=$((n + 1)); $d "$v" "$s" 500 20 30 --negative-sec >/dev/null || { echo "FAIL negative security seed $s"; fail=$((fail + 1)); }
+    n=$((n + 1)); $d "$v" "$s" 500 20 30 --bad-count >/dev/null || { echo "FAIL bad count seed $s"; fail=$((fail + 1)); }
+done
 # one wallet, one transaction: every block hits the same wallet, and self transfers dominate
 n=$((n + 1)); $d "$v" 7 1 5 1 --brute >/dev/null || { echo "FAIL single wallet"; fail=$((fail + 1)); }
 if [ "$fail" -ne 0 ]; then echo "$fail of $n cases failed"; exit 1; fi
