@@ -155,17 +155,21 @@ void wClear() {
 }
 
 int main(int argc, char *argv[]) {
- int test_no = atoi(argv[1]);
+ if (argc != 2) {
+ fprintf(stderr, "usage: %s <test_case_number>\n", argv[0]);
+ return 2;
+ }
+ char *end;
+ long test_no = strtol(argv[1], &end, 10);
+ if (end == argv[1] || *end != '\0' || test_no < 0 || test_no > 999999) {
+ fprintf(stderr, "invalid test case number: %s\n", argv[1]);
+ return 2;
+ }
 
- char input_file[32] = "input_";
- char transaction_file[32] = "transactions_";
- char t[8];
-
- sprintf(t, "%d", test_no);
- strcat(input_file, t);
- strcat(input_file, ".txt");
- strcat(transaction_file, t);
- strcat(transaction_file, ".txt");
+ char input_file[64];
+ char transaction_file[64];
+ snprintf(input_file, sizeof(input_file), "input_%ld.txt", test_no);
+ snprintf(transaction_file, sizeof(transaction_file), "transactions_%ld.txt", test_no);
 
  int total_no_transactions;
  int block_size;
@@ -221,6 +225,11 @@ int main(int argc, char *argv[]) {
  }
 
  fclose(ipfile);
+
+ if (total_no_transactions <= 0 || block_size <= 0) {
+ fprintf(stderr, "total_no_transactions and block_size must be positive\n");
+ return 1;
+ }
 
  int shmemid;
  struct Block *shmemPtr;
