@@ -15,6 +15,10 @@ for s in 200 201 202; do
     n=$((n + 1)); $d "$v" "$s" 500 20 30 --negative-sec >/dev/null || { echo "FAIL negative security seed $s"; fail=$((fail + 1)); }
     n=$((n + 1)); $d "$v" "$s" 500 20 30 --bad-count >/dev/null || { echo "FAIL bad count seed $s"; fail=$((fail + 1)); }
 done
+# lines longer than 128 bytes
+for s in 300 301 302; do
+    n=$((n + 1)); $d "$v" "$s" 2000 20 100 --long-lines >/dev/null || { echo "FAIL long lines seed $s"; fail=$((fail + 1)); }
+done
 # one wallet, one transaction: every block hits the same wallet, and self transfers dominate
 n=$((n + 1)); $d "$v" 7 1 5 1 --brute >/dev/null || { echo "FAIL single wallet"; fail=$((fail + 1)); }
 if [ "$fail" -ne 0 ]; then echo "$fail of $n cases failed"; exit 1; fi

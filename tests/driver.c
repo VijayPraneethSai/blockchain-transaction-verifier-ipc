@@ -3,7 +3,9 @@
  * creates the shared memory segment and the message queue, starts the verifier, sends one request per
  * block and checks every reply against an independent calculation.
  *
- *   driver <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec] [--bad-count]
+ *   driver <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec] [--bad-count] [--long-lines]
+ *
+ * --long-lines uses nanosecond timestamps and amounts up to 10^12, so transaction lines are longer than 128 bytes.
  *
  * --bad-count corrupts the wallet count of block 0 and expects the verifier to refuse it: exit status 1, no reply.
  *
@@ -69,16 +71,17 @@ static double now_ms(void) {
 struct Tx { int sender, receiver, zeros; long long amount; };
 
 int main(int argc, char **argv) {
-    if (argc < 6) { fprintf(stderr, "usage: %s <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec] [--bad-count]\n", argv[0]); return 2; }
+    if (argc < 6) { fprintf(stderr, "usage: %s <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec] [--bad-count] [--long-lines]\n", argv[0]); return 2; }
     char verifier[4096];
     if (!realpath(argv[1], verifier)) { perror("verifier path"); return 2; }   /* the child changes directory */
     rng_state = strtoull(argv[2], NULL, 10) * 2654435761u + 88172645463325252ull;
     int T = atoi(argv[3]), B = atoi(argv[4]), W = atoi(argv[5]);
-    int brute = 0, negative_sec = 0, bad_count = 0;
+    int brute = 0, negative_sec = 0, bad_count = 0, long_lines = 0;
     for (int i = 6; i < argc; i++) {
         if (!strcmp(argv[i], "--brute")) brute = 1;
         else if (!strcmp(argv[i], "--negative-sec")) negative_sec = 1;
         else if (!strcmp(argv[i], "--bad-count")) bad_count = 1;
+        else if (!strcmp(argv[i], "--long-lines")) long_lines = 1;
     }
     if (T < 1 || B < 1 || W < 1) { fprintf(stderr, "transactions, blocks and wallets must be >= 1\n"); return 2; }
     for (int i = 0; i < 10; i++) rnd();
@@ -104,7 +107,7 @@ int main(int argc, char **argv) {
         tx[i].zeros = z;
         tx[i].sender = rnd_int(0, W - 1);
         tx[i].receiver = rnd_int(0, 99) < 5 ? tx[i].sender : rnd_int(0, W - 1);   /* about 5% self transfers */
-        tx[i].amount = rnd_int(1, 1000000);
+        tx[i].amount = long_lines ? (long long)(rnd() % 1000000000000ull) + 1 : rnd_int(1, 1000000);
     }
 
     /* blocks: 0..100 wallets each (so empty and full blocks both occur), duplicates allowed */
@@ -167,7 +170,8 @@ int main(int argc, char **argv) {
     snprintf(path, sizeof path, "%s/transactions_1.txt", workdir);
     f = fopen(path, "w"); if (!f) die("transactions file");
     for (int i = 0; i < T; i++)
-        fprintf(f, "2024-01-01T00:00:%02d %s %s %s %lld\n", i % 60, hash[i], wallet[tx[i].sender], wallet[tx[i].receiver], tx[i].amount);
+        fprintf(f, long_lines ? "2024-01-01T00:00:%02d.123456789Z %s %s %s %lld\n" : "2024-01-01T00:00:%02d %s %s %s %lld\n",
+                i % 60, hash[i], wallet[tx[i].sender], wallet[tx[i].receiver], tx[i].amount);
     fclose(f);
 
     /* shared memory and queue */
