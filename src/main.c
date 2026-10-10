@@ -65,10 +65,16 @@ static int load_transactions(const char *path, int limit) {
         perror("Error in opening transaction file");
         return -1;
     }
-    char line[128], timestamp[32], hash[65], sender[WALLET_HASH_SIZE + 1], receiver[WALLET_HASH_SIZE + 1];
+    /* a valid line is at most about 155 bytes (31 + 64 + 16 + 16 + 20 digits + separators) */
+    char line[256], timestamp[32], hash[65], sender[WALLET_HASH_SIZE + 1], receiver[WALLET_HASH_SIZE + 1];
     long long amount;
     int loaded = 0;
     while (loaded < limit && fgets(line, sizeof line, f)) {
+        if (!strchr(line, '\n') && !feof(f)) {   /* longer than the buffer: it cannot be a valid line, drop the rest of it */
+            int c;
+            while ((c = fgetc(f)) != '\n' && c != EOF) {}
+            continue;
+        }
         if (sscanf(line, "%31s %64s %16s %16s %lld", timestamp, hash, sender, receiver, &amount) != 5) continue;
         int zeros = 0;
         while (zeros < MAX_LEADING_ZEROS && hash[zeros] == '0') zeros++;
