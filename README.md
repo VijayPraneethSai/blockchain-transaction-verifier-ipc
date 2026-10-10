@@ -72,7 +72,7 @@ is noisy; single runs varied by about 20%.
 
 | Version | Total | Load + index | 2,000 queries | Peak memory |
 |---|---:|---:|---:|---:|
-| Before (after the split into modules) | 4.10 s | 3.59 s | 0.51 s | 307 MB |
+| Before (split into modules, bugs fixed) | 4.10 s | 3.59 s | 0.51 s | 307 MB |
 | Split lines by hand instead of `sscanf` | 3.46 s | 3.01 s | 0.48 s | 307 MB |
 | One cumulative array per wallet instead of six | 2.45 s | 2.00 s | 0.45 s | 76 MB |
 | 262,139 buckets instead of 10,007 | 1.16 s | 0.77 s | 0.39 s | 76 MB |
