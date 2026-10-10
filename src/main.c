@@ -58,7 +58,21 @@ static int read_header(const char *path, struct Header *h) {
     return 0;
 }
 
-/* One transaction per line: timestamp hash sender receiver amount. Lines that do not parse are skipped. */
+/* Copies the next space-separated field of *p into out (at most max bytes). Returns 0 if there is none or it is too long. */
+static int next_field(const char **p, char *out, size_t max) {
+    const char *s = *p;
+    while (*s == ' ' || *s == '\t') s++;
+    size_t n = 0;
+    while (s[n] && s[n] != ' ' && s[n] != '\t' && s[n] != '\n' && s[n] != '\r') n++;
+    if (n == 0 || n > max) return 0;
+    memcpy(out, s, n);
+    out[n] = '\0';
+    *p = s + n;
+    return 1;
+}
+
+/* One transaction per line: timestamp hash sender receiver amount. Lines that do not parse are skipped.
+ * The fields are split by hand: scanf with five conversions was most of the loading time (see the README). */
 static int load_transactions(const char *path, int limit) {
     FILE *f = fopen(path, "r");
     if (!f) {
@@ -66,8 +80,7 @@ static int load_transactions(const char *path, int limit) {
         return -1;
     }
     /* a valid line is at most about 155 bytes (31 + 64 + 16 + 16 + 20 digits + separators) */
-    char line[256], timestamp[32], hash[65], sender[WALLET_HASH_SIZE + 1], receiver[WALLET_HASH_SIZE + 1];
-    long long amount;
+    char line[256], timestamp[32], hash[65], sender[WALLET_HASH_SIZE + 1], receiver[WALLET_HASH_SIZE + 1], amount_text[24];
     int loaded = 0;
     while (loaded < limit && fgets(line, sizeof line, f)) {
         if (!strchr(line, '\n') && !feof(f)) {   /* longer than the buffer: it cannot be a valid line, drop the rest of it */
@@ -75,7 +88,13 @@ static int load_transactions(const char *path, int limit) {
             while ((c = fgetc(f)) != '\n' && c != EOF) {}
             continue;
         }
-        if (sscanf(line, "%31s %64s %16s %16s %lld", timestamp, hash, sender, receiver, &amount) != 5) continue;
+        const char *p = line;
+        if (!next_field(&p, timestamp, 31) || !next_field(&p, hash, 64) || !next_field(&p, sender, WALLET_HASH_SIZE) ||
+            !next_field(&p, receiver, WALLET_HASH_SIZE) || !next_field(&p, amount_text, 23))
+            continue;
+        char *end;
+        long long amount = strtoll(amount_text, &end, 10);
+        if (end == amount_text || *end != '\0') continue;
         int zeros = 0;
         while (zeros < MAX_LEADING_ZEROS && hash[zeros] == '0') zeros++;
         wallet_index_add(sender, receiver, zeros, amount);
