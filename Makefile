@@ -1,12 +1,12 @@
 CC ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra
-VERIFIER_SRC = main.c
+VERIFIER_SRC = src/main.c src/wallet_index.c src/block_counts.c
 
 all: bin/verifier
 
 bin/verifier: $(VERIFIER_SRC)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -o $@ $(VERIFIER_SRC)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(VERIFIER_SRC)
 
 bin/driver: tests/driver.c
 	@mkdir -p bin
