@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ipc.h>
+#include <sys/resource.h>
 #include <sys/msg.h>
 #include <sys/shm.h>
 #include <sys/stat.h>
@@ -194,6 +195,7 @@ int main(int argc, char **argv) {
 
     /* one request, one reply, in block order; give up if the verifier exits or stalls */
     int bad = 0;
+    double first_reply_ms = 0;
     for (int b = 0; b < B && !bad; b++) {
         size_t rsz = sizeof(struct Request) - sizeof(long);
         while (msgsnd(mq_id, &req[b], rsz, IPC_NOWAIT) == -1) {
@@ -220,6 +222,7 @@ int main(int argc, char **argv) {
             if (now_ms() - wait_start > 120000) { fprintf(stderr, "FAIL: no reply for block %d within 120 s\n", b); cleanup(); return 1; }
             usleep(100);
         }
+        if (b == 0) first_reply_ms = now_ms() - t0;
         if (rep.sum != expected[b]) {
             fprintf(stderr, "FAIL: block %d (wallets=%d, security=%d): verifier=%ld expected=%ld\n",
                     b, blocks[b].wallet_count, req[b].security_value, rep.sum, expected[b]);
@@ -228,13 +231,19 @@ int main(int argc, char **argv) {
     }
     double total = now_ms() - t0;
     int st = 0;
+    long max_rss_kb = 0;
     if (!bad) {
+        struct rusage ru;
         waitpid(child, &st, 0); child = 0;
+        getrusage(RUSAGE_CHILDREN, &ru);
+        max_rss_kb = ru.ru_maxrss;
         if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) { fprintf(stderr, "FAIL: verifier exit status %d\n", st); bad = 1; }
     }
     cleanup();
     if (!bad && bad_count) { fprintf(stderr, "FAIL: the corrupt wallet count of block 0 was not refused\n"); return 1; }
     if (bad) return 1;
-    printf("ok seed=%s transactions=%d blocks=%d wallets=%d total_ms=%.1f\n", argv[2], T, B, W, total);
+    /* ready_ms: until the first reply, i.e. reading and indexing the transactions; query_ms: the rest */
+    printf("ok seed=%s transactions=%d blocks=%d wallets=%d total_ms=%.1f ready_ms=%.1f query_ms=%.1f max_rss_mb=%.1f\n",
+           argv[2], T, B, W, total, first_reply_ms, total - first_reply_ms, max_rss_kb / 1024.0);
     return 0;
 }
