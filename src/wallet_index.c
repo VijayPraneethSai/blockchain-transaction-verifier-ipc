@@ -7,14 +7,12 @@
 
 #define BUCKETS 10007
 
+/* totals[k] = amount of the transactions this wallet takes part in whose hash has k leading zeros
+ * (cumulative, "at least k", once finalize has run). A transaction counts once for a wallet even if the wallet is
+ * both sender and receiver, so the sender-minus-self-transfer bookkeeping is done when transactions are added. */
 struct Wallet {
     char key[WALLET_HASH_SIZE + 1];
-    long long snd_exact[MAX_LEADING_ZEROS + 1];   /* as sender, by exact leading-zero count */
-    long long rcv_exact[MAX_LEADING_ZEROS + 1];
-    long long self_exact[MAX_LEADING_ZEROS + 1];  /* sender == receiver */
-    long long snd_tot[MAX_LEADING_ZEROS + 1];     /* at least k leading zeros, filled by finalize */
-    long long rcv_tot[MAX_LEADING_ZEROS + 1];
-    long long self_tot[MAX_LEADING_ZEROS + 1];
+    long long totals[MAX_LEADING_ZEROS + 1];
     struct Wallet *next;
 };
 
@@ -39,30 +37,20 @@ static struct Wallet *find_or_create(const char *key) {
 }
 
 void wallet_index_add(const char *sender, const char *receiver, int leading_zeros, long long amount) {
-    find_or_create(sender)->snd_exact[leading_zeros] += amount;
-    find_or_create(receiver)->rcv_exact[leading_zeros] += amount;
-    if (strcmp(sender, receiver) == 0) find_or_create(sender)->self_exact[leading_zeros] += amount;
-}
-
-static void suffix_sums(const long long *exact, long long *total) {
-    total[MAX_LEADING_ZEROS] = exact[MAX_LEADING_ZEROS];
-    for (int k = MAX_LEADING_ZEROS - 1; k >= 0; k--) total[k] = total[k + 1] + exact[k];
+    find_or_create(sender)->totals[leading_zeros] += amount;
+    if (strcmp(sender, receiver) != 0) find_or_create(receiver)->totals[leading_zeros] += amount;
 }
 
 void wallet_index_finalize(void) {
     for (int b = 0; b < BUCKETS; b++)
-        for (struct Wallet *w = table[b]; w; w = w->next) {
-            suffix_sums(w->snd_exact, w->snd_tot);
-            suffix_sums(w->rcv_exact, w->rcv_tot);
-            suffix_sums(w->self_exact, w->self_tot);
-        }
+        for (struct Wallet *w = table[b]; w; w = w->next)
+            for (int k = MAX_LEADING_ZEROS - 1; k >= 0; k--) w->totals[k] += w->totals[k + 1];
 }
 
 int wallet_index_sum(const char *wallet, int min_zeros, long long *sum) {
     struct Wallet *w = find(wallet);
     if (!w) return 0;
-    /* a self transfer is in both the sender and the receiver totals, so subtract it once */
-    *sum = w->snd_tot[min_zeros] + w->rcv_tot[min_zeros] - w->self_tot[min_zeros];
+    *sum = w->totals[min_zeros];
     return 1;
 }
 
