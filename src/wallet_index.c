@@ -5,7 +5,7 @@
 #include "protocol.h"
 #include "wallet_index.h"
 
-#define BUCKETS 10007
+#define BUCKETS 262139
 
 /* totals[k] = amount of the transactions this wallet takes part in whose hash has k leading zeros
  * (cumulative, "at least k", once finalize has run). A transaction counts once for a wallet even if the wallet is
