@@ -3,7 +3,9 @@
  * creates the shared memory segment and the message queue, starts the verifier, sends one request per
  * block and checks every reply against an independent calculation.
  *
- *   driver <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec]
+ *   driver <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec] [--bad-count]
+ *
+ * --bad-count corrupts the wallet count of block 0 and expects the verifier to refuse it: exit status 1, no reply.
  *
  * The wire format below is the contract with the verifier (it is deliberately not shared with its source).
  * Exit status 0 = every block matched.
@@ -67,15 +69,16 @@ static double now_ms(void) {
 struct Tx { int sender, receiver, zeros; long long amount; };
 
 int main(int argc, char **argv) {
-    if (argc < 6) { fprintf(stderr, "usage: %s <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec]\n", argv[0]); return 2; }
+    if (argc < 6) { fprintf(stderr, "usage: %s <verifier> <seed> <transactions> <blocks> <wallets> [--brute] [--negative-sec] [--bad-count]\n", argv[0]); return 2; }
     char verifier[4096];
     if (!realpath(argv[1], verifier)) { perror("verifier path"); return 2; }   /* the child changes directory */
     rng_state = strtoull(argv[2], NULL, 10) * 2654435761u + 88172645463325252ull;
     int T = atoi(argv[3]), B = atoi(argv[4]), W = atoi(argv[5]);
-    int brute = 0, negative_sec = 0;
+    int brute = 0, negative_sec = 0, bad_count = 0;
     for (int i = 6; i < argc; i++) {
         if (!strcmp(argv[i], "--brute")) brute = 1;
         else if (!strcmp(argv[i], "--negative-sec")) negative_sec = 1;
+        else if (!strcmp(argv[i], "--bad-count")) bad_count = 1;
     }
     if (T < 1 || B < 1 || W < 1) { fprintf(stderr, "transactions, blocks and wallets must be >= 1\n"); return 2; }
     for (int i = 0; i < 10; i++) rnd();
@@ -150,6 +153,8 @@ int main(int argc, char **argv) {
         expected[b] = (long)sum;
     }
 
+    if (bad_count) blocks[0].wallet_count = (rnd() & 1) ? MAX_WALLETS + 1 : -1;   /* after the expected values are computed */
+
     /* files for the verifier */
     snprintf(workdir, sizeof workdir, "/tmp/bcv_%d", (int)getpid());
     if (mkdir(workdir, 0700) != 0) die("mkdir");
@@ -198,7 +203,16 @@ int main(int argc, char **argv) {
             if (n >= 0) break;
             if (errno != ENOMSG && errno != EINTR) die("msgrcv");
             int st;
-            if (waitpid(child, &st, WNOHANG) == child) { child = 0; fprintf(stderr, "FAIL: verifier exited early (status %d) before block %d\n", st, b); cleanup(); return 1; }
+            if (waitpid(child, &st, WNOHANG) == child) {
+                child = 0;
+                if (bad_count && b == 0 && WIFEXITED(st) && WEXITSTATUS(st) == 1) {
+                    printf("ok seed=%s: corrupt wallet count was refused (exit status 1)\n", argv[2]);
+                    cleanup(); return 0;
+                }
+                fprintf(stderr, "FAIL: verifier exited early (status %d) before block %d\n", st, b);
+                cleanup();
+                return 1;
+            }
             if (now_ms() - wait_start > 120000) { fprintf(stderr, "FAIL: no reply for block %d within 120 s\n", b); cleanup(); return 1; }
             usleep(100);
         }
@@ -215,6 +229,7 @@ int main(int argc, char **argv) {
         if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) { fprintf(stderr, "FAIL: verifier exit status %d\n", st); bad = 1; }
     }
     cleanup();
+    if (!bad && bad_count) { fprintf(stderr, "FAIL: the corrupt wallet count of block 0 was not refused\n"); return 1; }
     if (bad) return 1;
     printf("ok seed=%s transactions=%d blocks=%d wallets=%d total_ms=%.1f\n", argv[2], T, B, W, total);
     return 0;
